@@ -5,3 +5,4 @@
 ## Resources
 
 - [Active Record Validations](https://guides.rubyonrails.org/v5.1/active_record_validations.html)
+- [`rescue_from`](https://edgeapi.rubyonrails.org/classes/ActiveSupport/Rescuable/ClassMethods.html#method-i-rescue_from)
