@@ -1,0 +1,328 @@
+* Notes
+I began by modifying 'app/models/production.rb' Production model file with the following revision to add in Ruby's built-in validation that validates whether or not a specific attribute exists via the 'validates' keyword:
+#+begin_src ruby
+class Production < ApplicationRecord
+    has_many :crew_members
+
+    validates :title, presence: true
+
+    def title_director
+        "#{title}: #{director}"
+    end
+end
+#+end_src
+
+I then added a 'byebug' line within the 'app/controllers/productions_controller.rb' controller file's 'create' method to see if validation actually occurs:
+#+begin_src ruby
+class ProductionsController < ApplicationController
+    # NOTE: This is added to wrap the 'params' hash below:
+    wrap_parameters format: []
+    def index
+        productions = Production.all()
+        render json: productions, status: :ok
+    end
+
+    def show
+        production = Production.find_by(id: params[:id])
+
+        if production
+            render json: production, except: [:id, :created_at, :updated_at], methods: [:title_director], status: :ok
+        else
+            render json: {error: "production not found"}, status: :not_found
+        end
+    end
+
+    def create
+        # NOTE: I revised this line to instead use 'production_params' from the private method below:
+        # production = Production.create(params)
+        production = Production.create(production_params)
+        byebug
+        render json: production, status: :created
+    end
+
+    def update
+        # find
+        production = Production.find_by(id: params[:id])
+        # update
+        if production
+            production.update(production_params)
+            render json: production, status: :accepted
+        else
+            render json: { error: "Production not found" }, status: :not_found
+        end
+    end
+
+    def destroy
+        production = Production.find_by(id: params[:id])
+        if production
+            production.destroy()
+            head :no_content
+        else
+            render json: { error: "Production not found "}, status: :not_found
+        end
+    end
+
+    private
+
+    # NOTE: This private method ONLY allows these parameter values to come inside these 'production_params'
+    def production_params
+        params.permit(:title, :genre, :budget, :image, :director, :ongoing, :description)
+    end
+end
+#+end_src
+
+I started the 'rails s' server, and then created the following POST request with a deliberate attempt to use a blank 'title' attribute value within the 'body' of the POST request within Postman so that I could trigger the 'validates:' keyword and 'byebug' accordingly:
+- HTTP Verb Used: POST
+- URL Used: http://localhost:3000/productions
+- Body > raw > json:
+#+begin_src json
+{
+    "title": "",
+    "genre": "Musical",
+    "budget": 50000,
+    "image": "https://en.wikipedia.org/wiki/Cats_(musical)#/media/File:CatsMusicalLogo.jpg",
+    "ongoing": true,
+    "description": "The musical that Maxwell Sheffield never got to produce",
+    "director": "Andrew Lloyd Webber"
+}
+#+end_src
+
+This resulted in the 'id' value of the response within 'byebug' returning a 'nil' value since not all the fields were properly validated so it didn't bother to create a new record for the POST request within the backend database:
+#+begin_src bash
+[19, 28] in /Users/samuelbanya/hub/Development/code/phase-4/phase-4-lecture-videos-validations/flatiron-theater/app/controllers/productions_controller.rb
+   19:     def create
+   20:         # NOTE: I revised this line to instead use 'production_params' from the private method below:
+   21:         # production = Production.create(params)
+   22:         production = Production.create(production_params)
+   23:         byebug
+=> 24:         render json: production, status: :created
+   25:     end
+   26:
+   27:     def update
+   28:         # find
+(byebug) production
+#<Production id: nil, title: "", genre: "Musical", budget: 50000, image: "https://en.wikipedia.org/wiki/Cats_(musical)#/medi...", ongoing: true, created_at: nil, updated_at: nil, description: "The musical that Maxwell Sheffield never got to pr...", director: "Andrew Lloyd Webber">
+(byebug) production.id
+nil
+(byebug)
+#+end_src
+
+I then created the same POST request in Postman but with a valid 'title' attribute value:
+- HTTP Verb Used: POST
+- URL Used: http://localhost:3000/productions
+- Body > raw > json:
+#+begin_src json
+{
+    "title": "Cats",
+    "genre": "Musical",
+    "budget": 50000,
+    "image": "https://en.wikipedia.org/wiki/Cats_(musical)#/media/File:CatsMusicalLogo.jpg",
+    "ongoing": true,
+    "description": "The musical that Maxwell Sheffield never got to produce",
+    "director": "Andrew Lloyd Webber"
+}
+#+end_src
+
+This resulted in the following 'byebug' output with the correct 'id' value present as well as a 'true' response for 'production.valid?' command:
+#+begin_src bash
+[19, 28] in /Users/samuelbanya/hub/Development/code/phase-4/phase-4-lecture-videos-validations/flatiron-theater/app/controllers/productions_controller.rb
+   19:     def create
+   20:         # NOTE: I revised this line to instead use 'production_params' from the private method below:
+   21:         # production = Production.create(params)
+   22:         production = Production.create(production_params)
+   23:         byebug
+=> 24:         render json: production, status: :created
+   25:     end
+   26:
+   27:     def update
+   28:         # find
+(byebug) production
+#<Production id: 11, title: "Cats", genre: "Musical", budget: 50000, image: "https://en.wikipedia.org/wiki/Cats_(musical)#/medi...", ongoing: true, created_at: "2022-10-23 16:58:52.335663000 +0000", updated_at: "2022-10-23 16:58:52.335663000 +0000", description: "The musical that Maxwell Sheffield never got to pr...", director: "Andrew Lloyd Webber">
+(byebug) production.id
+11
+(byebug) production.valid?
+true
+#+end_src
+
+I then modified the contents of the 'app/controllers/productions_controller.rb' controller file to utilize the '.valid?' method to render the given created object via the 'create()' method, and also used the '.errors.full_messages()' method within the 'else' clause to display the error message to the user upon entering in an invalid attribute value:
+#+begin_src ruby
+class ProductionsController < ApplicationController
+    # NOTE: This is added to wrap the 'params' hash below:
+    wrap_parameters format: []
+    def index
+        productions = Production.all()
+        render json: productions, status: :ok
+    end
+
+    def show
+        production = Production.find_by(id: params[:id])
+
+        if production
+            render json: production, except: [:id, :created_at, :updated_at], methods: [:title_director], status: :ok
+        else
+            render json: {error: "production not found"}, status: :not_found
+        end
+    end
+
+    def create
+        # NOTE: I revised this line to instead use 'production_params' from the private method below:
+        # production = Production.create(params)
+        production = Production.create(production_params)
+        if production.valid?
+            render json: production, status: :created
+        else
+            render json: production.errors.full_messages
+    end
+
+    def update
+        # find
+        production = Production.find_by(id: params[:id])
+        # update
+        if production
+            production.update(production_params)
+            render json: production, status: :accepted
+        else
+            render json: { error: "Production not found" }, status: :not_found
+        end
+    end
+
+    def destroy
+        production = Production.find_by(id: params[:id])
+        if production
+            production.destroy()
+            head :no_content
+        else
+            render json: { error: "Production not found "}, status: :not_found
+        end
+    end
+
+    private
+
+    # NOTE: This private method ONLY allows these parameter values to come inside these 'production_params'
+    def production_params
+        params.permit(:title, :genre, :budget, :image, :director, :ongoing, :description)
+    end
+end
+#+end_src
+
+I then further refactored this further with 'rescue ActiveRecord::RecordInvalid => invalid' built-in error handling method from Active Record, and also made use of the '!' symbol before the '.create()' method call itself as well:
+#+begin_src ruby
+class ProductionsController < ApplicationController
+    # NOTE: This is added to wrap the 'params' hash below:
+    wrap_parameters format: []
+    def index
+        productions = Production.all()
+        render json: productions, status: :ok
+    end
+
+    def show
+        production = Production.find_by(id: params[:id])
+
+        if production
+            render json: production, except: [:id, :created_at, :updated_at], methods: [:title_director], status: :ok
+        else
+            render json: {error: "production not found"}, status: :not_found
+        end
+    end
+
+    def create
+        # NOTE: I revised this line to instead use 'production_params' from the private method below:
+        # production = Production.create(params)
+        production = Production.create!(production_params)
+        render json: production, status: :accepted
+    rescue ActiveRecord::RecordInvalid => invalid
+        render json: { error: invalid.record.errors}, status: :unprocessable_entity
+    end
+
+    def update
+        # find
+        production = Production.find_by(id: params[:id])
+        # update
+        if production
+            production.update(production_params)
+            render json: production, status: :accepted
+        else
+            render json: { error: "Production not found" }, status: :not_found
+        end
+    end
+
+    def destroy
+        production = Production.find_by(id: params[:id])
+        if production
+            production.destroy()
+            head :no_content
+        else
+            render json: { error: "Production not found "}, status: :not_found
+        end
+    end
+
+    private
+
+    # NOTE: This private method ONLY allows these parameter values to come inside these 'production_params'
+    def production_params
+        params.permit(:title, :genre, :budget, :image, :director, :ongoing, :description)
+    end
+end
+#+end_src
+
+I then further refactored the code with a more specific private method called 'render_unprocessable_entity' to handle the error handling in this scenario as well as placing the 'rescue_from ActiveRecord::RecordInvalid, with: :render_unprocessable_entity' section at the top of the code:
+#+begin_src ruby
+  class ProductionsController < ApplicationController
+    rescue_from ActiveRecord::RecordInvalid, with: :render_unprocessable_entity
+    # NOTE: This is added to wrap the 'params' hash below:
+    wrap_parameters format: []
+    def index
+      productions = Production.all()
+      render json: productions, status: :ok
+    end
+
+    def show
+      production = Production.find_by(id: params[:id])
+
+      if production
+        render json: production, except: [:id, :created_at, :updated_at], methods: [:title_director], status: :ok
+      else
+        render json: {error: "production not found"}, status: :not_found
+      end
+    end
+
+    def create
+      # NOTE: I revised this line to instead use 'production_params' from the private method below:
+      # production = Production.create(params)
+      production = Production.create!(production_params)
+      render json: production, status: :accepted
+    end
+
+    def update
+      # find
+      production = Production.find_by(id: params[:id])
+      # update
+      if production
+        production.update(production_params)
+        render json: production, status: :accepted
+      else
+        render json: { error: "Production not found" }, status: :not_found
+      end
+    end
+
+    def destroy
+      production = Production.find_by(id: params[:id])
+      if production
+        production.destroy()
+        head :no_content
+      else
+        render json: { error: "Production not found "}, status: :not_found
+      end
+    end
+
+    private
+    # NOTE: This private method ONLY allows these parameter values to come inside these 'production_params'
+    def production_params
+      params.permit(:title, :genre, :budget, :image, :director, :ongoing, :description)
+    end
+
+    def render_unprocessable_entity(invalid)
+      render json: { error: invalid.record.errors}, status: :unprocessable_entity
+    end
+  end
+#+end_src
